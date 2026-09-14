@@ -90,66 +90,82 @@ class RaftCluster:
                     
                     peer = self.servers[peer_id]
 
-                    # TODO: создать экземпляр RequestVoteRequest с правильными полями
-                    req = None
-
-                    resp = peer.request_vote(req)
+                    req = RequestVoteRequest(
+                        term=server.state.current_term,
+                        candidate_id=node_id,
+                        last_log_index=server.state.get_last_log_index(),
+                        last_log_term=server.state.get_last_log_term(),
+                    )
+                    resp = peer.request_vote(req) 
                     
                     # Обновить информацию candidate
                     if resp.term > server.state.current_term:
-                        # TODO: обновить server.state с помощью методов set_term и become_follower
-                        pass
+                        #  : обновить server.state с помощью методов set_term и become_follower
+                            server.state.set_term(resp.term)
+                            server.state.become_follower(resp.term)
                     elif resp.vote_granted:
-                        # TODO: обновить server.state.votes_received, записывая получение голоса
-                        pass
-                
+                        #  : обновить server.state.votes_received, записывая получение голоса
+                        server.state.votes_received[peer_id] = True
+
                 # Проверить, получил ли большинство голосов
                 if server.state.state == NodeState.CANDIDATE:  # еще не стал follower
-                    # TODO: посчитать голоса server.state.votes_received
-                    votes_count = None
-                    # TODO: посчитать, сколько голосов нужно для избрания себя лидером (см. self.node_ids)
-                    needed = None
+                    #  : посчитать голоса server.state.votes_received
+                    votes_count = sum(1 for v in server.state.votes_received.values() if v)
+                    #  : посчитать, сколько голосов нужно для избрания себя лидером (см. self.node_ids)
+                    needed = len(self.node_ids) // 2 + 1
 
                     if votes_count >= needed:
-                        # TODO: обновить server.state, вызвав become_leader и _notify_state_change
+                        #  : обновить server.state, вызвав become_leader и _notify_state_change
                         # использовать server.peer_ids для передачи в become_leader
-                        pass
+                        server.state.become_leader(server.peer_ids)
+                        server._notify_state_change()
         
         # Leader отправляет AppendEntries
         for node_id, server in self.servers.items():
             if server.state.state == NodeState.LEADER:
                 for peer_id in server.peer_ids:
 
-                    # TODO: если сеть разделена между node_id и peer_id, пропустить отправку AppendEntries этому peer_id
+                    #  : если сеть разделена между node_id и peer_id, пропустить отправку AppendEntries этому peer_id
                     # используйте self._can_reach(node_id, peer_id) для проверки связи между узлами
-                    
+                    if not self._can_reach(node_id, peer_id):
+                        continue
+
                     peer = self.servers[peer_id]
                     prev_index = server.state.next_index.get(peer_id, 0) - 1
                     prev_term = server.state.log[prev_index].term if prev_index >= 0 and prev_index < len(server.state.log) else 0
                     
                     entries = server.state.get_entries_from(prev_index + 1)
                     
-                    # TODO: создать экземпляр AppendEntriesRequest с правильными полями
+                    #  : создать экземпляр AppendEntriesRequest с правильными полями
                     # используйте server.state (current_term, commit_index), node_id, prev_index, prev_term, entries
-                    req = None
+                    req = AppendEntriesRequest(
+                        term=server.state.current_term,
+                        leader_id=node_id,
+                        prev_log_index=prev_index,
+                        prev_log_term=prev_term,
+                        entries=entries,
+                        leader_commit=server.state.commit_index,
+                    )
                     
                     resp = peer.append_entries(req)
                     
                     # Обновить leader state
                     if resp.term > server.state.current_term:
-                        # TODO: обновить server.state с помощью методов set_term и become_follower
-                        pass
+                        #  : обновить server.state с помощью методов set_term и become_follower
+                            server.state.set_term(resp.term)
+                            server.state.become_follower(resp.term)
                     elif resp.success:
-                        # TODO: обновить server.state.match_index и server.state.next_index для этого peer_id
+                        #  : обновить server.state.match_index и server.state.next_index для этого peer_id
                         # match_index должен быть индексом последней записи, которая точно есть на peer (prev_index + len(entries))
                         # next_index должен быть на единицу больше match_index
-                        pass
+                        server.state.match_index[peer_id] = prev_index + len(entries)
+                        server.state.next_index[peer_id] = prev_index + len(entries) + 1
                     else:
-                        # TODO: если неудача, это означает, что у peer нет некоторых записей, которые есть у лидера. 
+                        #  : если неудача, это означает, что у peer нет некоторых записей, которые есть у лидера. 
                         # Уменьшить next_index для этого peer_id и попробовать снова в следующем тике:
                         # т.е. для peer_id в server.state.next_index установить значение max(0, resp.last_log_index + 1) 
                         # (resp.last_log_index - это индекс последней записи, которая точно есть на peer)
-                        pass
+                        server.state.next_index[peer_id] = max(0, resp.last_log_index + 1)
                     
                     # Попробовать продвинуть commit_index
                     self._try_advance_commit_index(server, node_id)
@@ -158,22 +174,30 @@ class RaftCluster:
         """Попробовать продвинуть commit_index лидера"""
         # Проверить каждую запись, начиная со следующей после commit_index
         for index in range(leader.state.commit_index + 1, len(leader.state.log)):
-            # TODO: записи могут быть закомичены только если они из текущего term лидера
+            #  : записи могут быть закомичены только если они из текущего term лидера
             # см. leader.state.log[index].term и leader.state.current_term
             # если запись не из лидера текущего term, пропустить ее 
-
-            # TODO: подсчитать количество узлов (включая лидера) с этой записью
+            if leader.state.log[index].term != leader.state.current_term:
+                continue
+            #  : подсчитать количество узлов (включая лидера) с этой записью
             # используйте leader.peer_ids, чтобы проверить leader.state.match_index
             # проверьте для каждого peer_id, что его match_index >= index, и если да, учтите этот peer_id в подсчете
-            count = None
-
-            # TODO: посчитать, сколько голосов нужно для кворума (см. self.node_ids)
-            needed = None
-
-            # TODO: если кворум имеет эту запись (используйте count и needed), закоммитить
+            # count = None
+            # Считаем: лидер + peer'ы, у которых есть эта запись
+            count = 1  # лидер сам
+            for peer_id in leader.peer_ids:
+                if leader.state.match_index.get(peer_id, 0) >= index:
+                    count += 1
+            #  : посчитать, сколько голосов нужно для кворума (см. self.node_ids)
+            # needed = None 
+            #  : если кворум имеет эту запись (используйте count и needed), закоммитить
             # обновить leader.state.commit_index текущим индексом (index)
             # вызвать callback leader._apply_committed_entries()
-    
+            needed = len(self.node_ids) // 2 + 1
+            if count >= needed:
+                leader.state.commit_index = index
+                leader._apply_committed_entries()
+                
     def partition(self, nodes1: List[str], nodes2: List[str]) -> None:
         """
         Создать сетевое разделение между двумя группами узлов.

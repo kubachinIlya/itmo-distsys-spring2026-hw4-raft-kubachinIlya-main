@@ -36,8 +36,11 @@ class RaftNode:
     
     def _random_election_timeout_ms(self) -> float:
         """Сгенерировать случайный timeout выборов"""
-        # TODO: сгенерировать случайный election_timeout_ms в диапазоне [min_ms, max_ms], используя self.config
-        raise NotImplementedError()
+        #  : сгенерировать случайный election_timeout_ms в диапазоне [min_ms, max_ms], используя self.config
+        return random.uniform(
+            self.config.election_timeout_min_ms,
+            self.config.election_timeout_max_ms,
+        )
     
     def tick(self, current_time_ms: float) -> None:
         """
@@ -50,21 +53,25 @@ class RaftNode:
         if self.state.state == NodeState.LEADER:
             # Лидер должен отправлять heartbeats
             if time_since_last_rpc_ms >= self.config.heartbeat_interval_ms:
-                # TODO: отправить heartbeats всем followers (использовать self._send_heartbeats для этого)
-                # TODO: обновить self._last_rpc_time_ms после отправки heartbeats текущим симулированным временем
-                pass
+                #  : отправить heartbeats всем followers (использовать self._send_heartbeats для этого)
+                #  : обновить self._last_rpc_time_ms после отправки heartbeats текущим симулированным временем
+                if time_since_last_rpc_ms >= self.config.heartbeat_interval_ms:
+                    self._send_heartbeats()
+                    self._last_rpc_time_ms = current_time_ms
         
         elif self.state.state == NodeState.FOLLOWER:
             # Если timeout прошел, начать выборы
             if time_since_last_rpc_ms >= self._election_timeout_ms:
-                # TODO: начать выборы (использовать self._start_election для этого)
-                pass
+                #  : начать выборы (использовать self._start_election для этого)
+                    if time_since_last_rpc_ms >= self._election_timeout_ms:
+                        self._start_election()
         
         elif self.state.state == NodeState.CANDIDATE:
             # Candidate тоже может timeout и начать новые выборы
             if time_since_last_rpc_ms >= self._election_timeout_ms:
-                # TODO: начать выборы (использовать self._start_election для этого)
-                pass
+                #  : начать выборы (использовать self._start_election для этого)
+                    if time_since_last_rpc_ms >= self._election_timeout_ms:
+                        self._start_election()
     
     # ==================== RPC Handlers ====================
     
@@ -76,13 +83,18 @@ class RaftNode:
         """
         # Правило 1: если term < currentTerm, вернуть false
         if req.term < self.state.current_term:
-            # TODO: вернуть неуспешный AppendEntriesResponse с текущим term-ом
-            pass
+            #  : вернуть неуспешный AppendEntriesResponse с текущим term-ом
+            return AppendEntriesResponse(
+                term=self.state.current_term,
+                success=False,
+                last_log_index=len(self.state.log) - 1,
+            )
         
         # Если term больше - обновить и стать follower
         if req.term > self.state.current_term:
-            # TODO: обновить self.state с помощью методов set_term и become_follower
-            pass
+            #  : обновить self.state с помощью методов set_term и become_follower
+                self.state.set_term(req.term)
+                self.state.become_follower(req.term)
         
         # Сбросить election timer
         self._last_rpc_time_ms = self._current_time_ms
@@ -143,13 +155,17 @@ class RaftNode:
         """
         # Правило 1: если term < currentTerm, вернуть false
         if req.term < self.state.current_term:
-            # TODO: вернуть неуспешный RequestVoteResponse с текущим term-ом
-            pass
+            #  : вернуть неуспешный RequestVoteResponse с текущим term-ом
+            return RequestVoteResponse(
+                term=self.state.current_term,
+                vote_granted=False,
+            )
         
         # Если term больше - стать follower
         if req.term > self.state.current_term:
-            # TODO: обновить self.state с помощью методов set_term и become_follower
-            pass
+            #  : обновить self.state с помощью методов set_term и become_follower
+            self.state.set_term(req.term)
+            self.state.become_follower(req.term)
         
         # Правило 2: проверить, может ли быть дан голос
         vote_granted = False
