@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+.venv311/
+.DS_Store
+.idea/
+draw.py
+.draw.py
